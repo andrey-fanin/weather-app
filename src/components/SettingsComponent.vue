@@ -1,10 +1,11 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import SvgDraggable from '../assets/SvgDraggable.vue'
 import SvgRemove from '../assets/SvgRemove.vue'
 import SvgAdd from '../assets/SvgAdd.vue'
 const props = defineProps({
-	items: []
+	items: [],
+	error: ''
 })
 const newCity = ref('')
 
@@ -12,7 +13,8 @@ const emit = defineEmits([
 	'remove-item',
 	'insert-item',
 	'add-city',
-	'toggle-settings'
+	'toggle-settings',
+	'clear-error'
 ])
 const draggingIndex = ref(null)
 function dragStartHandler(index, event) {
@@ -36,12 +38,16 @@ function addCity() {
 <template>
 	<div class="settings__wrapper">
 		<div class="settings__title">
-			<h4>Settings</h4>
-			<button type="button" class="" @click="$emit('toggle-settings')">
+			<h3 class="settings__title-text">Settings</h3>
+			<button
+				type="button"
+				class="btn btn--settings__title"
+				@click="$emit('toggle-settings')"
+			>
 				x
 			</button>
 		</div>
-		<ul class="settings__list">
+		<ul class="settings__list" v-if="props.items.length">
 			<li
 				class="settings__list-item item"
 				v-for="(item, index) in props.items"
@@ -68,12 +74,13 @@ function addCity() {
 					type="text"
 					v-model.trim="newCity"
 					@keydown.enter="addCity"
-					placeholder="Add a new city"
+					@focus="emit('clear-error')"
 				/>
 				<button class="btn actions__btn" @click="addCity">
 					<svg-add />
 				</button>
 			</div>
+			<h5 v-if="props?.error">{{ props?.error }}</h5>
 		</div>
 	</div>
 </template>
@@ -86,6 +93,9 @@ function addCity() {
 			justify-content: space-between;
 			align-items: center;
 			margin-bottom: 8px;
+			&-text {
+				color: #000;
+			}
 		}
 		&list {
 			margin-bottom: 16px;
@@ -104,12 +114,14 @@ function addCity() {
 					column-gap: 10px;
 					&__icon {
 						display: flex;
+						cursor: move; /* fallback if grab cursor is unsupported */
 					}
 				}
 				.item-remove {
 					background: transparent;
 					border: unset;
 					width: 30px;
+					cursor: pointer;
 				}
 			}
 		}
@@ -117,6 +129,8 @@ function addCity() {
 			.new-city {
 				&__title {
 					margin-bottom: 8px;
+					text-align: left;
+					color: #000;
 				}
 				&__actions {
 					display: flex;

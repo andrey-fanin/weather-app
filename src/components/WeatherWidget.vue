@@ -5,8 +5,15 @@ import SettingsComponent from './SettingsComponent.vue'
 import SvgGear from '../assets/SvgGear.vue'
 import SvgArrowCompass from '../assets/SvgArrowCompass.vue'
 import SvgPressure from '../assets/SvgPressure.vue'
+import SvgLoader from '../assets/SvgLoader.vue'
 
 const API_KEY = '58d9d2543e0b8c24e232c3fac88f1bcb'
+const error = ref('')
+const errorText = reactive({
+	isExists: 'Please, enter an existing city name.',
+	isIncludes: 'This city is already in list.'
+})
+const isLoading = ref(false)
 const state = reactive({
 	id: 0,
 	cities: [],
@@ -19,7 +26,8 @@ function toggleSettings() {
 	showSettings.value = !showSettings.value
 }
 function getCitiesInfo() {
-	return Promise.all(
+	isLoading.value = true
+	const result = Promise.all(
 		state.cities.map(async city => {
 			const url = `https://api.openweathermap.org/data/2.5/weather?lat=${city.lat}&lon=${city.lon}&appid=${API_KEY}&units=metric`
 
@@ -46,12 +54,23 @@ function getCitiesInfo() {
 						// console.log(city)
 						// console.log(data?.weather?.icon, 'data?.weather?.icon')
 					})
-					.catch(error => console.error(error))
+					.catch(e => (error.value = errorText.isExists))
 			)
 		})
 	)
+	setTimeout(() => (isLoading.value = false), 1000)
+	return result
 }
 function addCity(newCity) {
+	if (
+		!state.cities.every(
+			item => item.name.toLowerCase() !== newCity.toLowerCase()
+		)
+	) {
+		error.value = errorText.isIncludes
+		return null
+	}
+	isLoading.value = true
 	const url = `https://api.openweathermap.org/geo/1.0/direct?q=${newCity}&limit=1&appid=${API_KEY}&units=metric`
 	fetch(url)
 		.then(response => response.json())
@@ -67,7 +86,9 @@ function addCity(newCity) {
 			state.newCity = ''
 			saveState()
 		})
-		.catch(error => console.error(error))
+		.catch(e => (error.value = errorText.isExists))
+	setTimeout(() => (isLoading.value = false), 1000)
+	clearError()
 }
 
 function removeCity(fromIndex) {
@@ -92,6 +113,10 @@ function restoreState() {
 	}
 }
 
+function clearError() {
+	error.value = ''
+	console.log('clear error')
+}
 watch(
 	() => state.cities.length,
 	() => {
@@ -99,28 +124,34 @@ watch(
 	}
 )
 onMounted(() => {
-	// Get user's location and add it to the cities list
-	navigator.geolocation.getCurrentPosition(position => {
-		const url = `https://api.openweathermap.org/data/2.5/weather?lat=${position.coords.latitude}&lon=${position.coords.longitude}&appid=${API_KEY}&units=metric/`
-		fetch(url)
-			.then(response => response.json())
-			.then(data => {
-				state.userLocation = {
-					id: data.id,
-					name: data.name
-				}
-				state.cities.unshift(state.userLocation)
-			})
-			.catch(error => console.error(error))
-	})
-
+	isLoading.value = true
 	// Restore saved state from local storage
 	restoreState()
+	// Get user's location and add it to the cities list
+	if (!state.cities.length) {
+		navigator.geolocation.getCurrentPosition(async position => {
+			const url = `https://api.openweathermap.org/data/2.5/weather?lat=${position.coords.latitude}&lon=${position.coords.longitude}&appid=${API_KEY}&units=metric/`
+			await fetch(url)
+				.then(response => response.json())
+				.then(data => {
+					console.log(data)
+					state.userLocation = {
+						id: state.id++,
+						name: data?.name,
+						lat: data?.coord?.lat,
+						lon: data?.coord?.lon
+					}
+					state.cities.unshift(state.userLocation)
+				})
+				.catch(e => (error.value = errorText.isExists))
+		})
+	}
 
-	getCitiesInfo()
+	// getCitiesInfo()
 	cityInfoUpdateTimer = window.setInterval(() => {
 		getCitiesInfo()
 	}, 3600000)
+	setTimeout(() => (isLoading.value = false), 1000)
 })
 onUnmounted(() => {
 	clearInterval(cityInfoUpdateTimer)
@@ -139,6 +170,8 @@ onUnmounted(() => {
 					@insert-item="insertItem"
 					@toggle-settings="toggleSettings"
 					@add-city="addCity"
+					:error="error"
+					@clear-error="clearError"
 				/>
 			</div>
 		</template>
@@ -148,54 +181,66 @@ onUnmounted(() => {
 				v-for="(city, index) in state.cities"
 				:key="city.id"
 			>
-				<div class="city-title">
-					<div class="city-title__name">
-						{{ city?.name }}, {{ city?.country }}
-					</div>
-					<div
-						class="city-title__gear"
-						@click="toggleSettings"
-						v-if="index === 0"
-					>
-						<svg-gear />
-					</div>
-					<div class="settings" v-if="index === 0" v-show="showSettings">
-						<settings-component
-							:items="state.cities"
-							@remove-item="removeCity"
-							@insert-item="insertItem"
-							@add-city="addCity"
-							@toggle-settings="toggleSettings"
-						/>
-					</div>
+				<div
+					v-if="isLoading && (index !== 0 || !showSettings)"
+					class="city-loader"
+				>
+					<svg-loader />
 				</div>
-				<div class="city-weather">
-					<img class="city-weather__icon" :src="city?.icon" alt="#" />
-					<div class="city-weather__temperature">{{ city?.temp }}°C</div>
-				</div>
-				<div class="city-descr">
-					<span class="">Feels like {{ city?.feels }}°C.</span>
-					<span class="">{{ city?.weather }}.</span>
-				</div>
-				<div class="city-special">
-					<div class="city-wind">
-						<div class="city-wind__speed">
-							<div class="city-wind__speed-icon">
-								<svg-arrow-compass />
+				<div v-else class="city-wrapper">
+					<div class="city-title">
+						<div class="city-title__name">
+							{{ city?.name }}, {{ city?.country }}
+						</div>
+						<div
+							class="city-title__gear"
+							@click="toggleSettings"
+							v-if="index === 0"
+						>
+							<svg-gear />
+						</div>
+						<div class="settings" v-if="index === 0" v-show="showSettings">
+							<settings-component
+								:items="state.cities"
+								@remove-item="removeCity"
+								@insert-item="insertItem"
+								@add-city="addCity"
+								@toggle-settings="toggleSettings"
+								:error="error"
+								@clear-error="clearError"
+							/>
+						</div>
+					</div>
+					<div class="city-weather">
+						<img class="city-weather__icon" :src="city?.icon" alt="#" />
+						<div class="city-weather__temperature">{{ city?.temp }}°C</div>
+					</div>
+					<div class="city-descr">
+						<span class="">Feels like {{ city?.feels }}°C.</span>
+						<span class="">{{ city?.weather }}.</span>
+					</div>
+					<div class="city-special">
+						<div class="city-wind">
+							<div class="city-wind__speed">
+								<div class="city-wind__speed-icon">
+									<svg-arrow-compass />
+								</div>
+								<span class="city-wind__speed-text">
+									{{ city?.wind?.speed }}m/s
+								</span>
 							</div>
-							<span class="city-wind__speed-text">
-								{{ city?.wind?.speed }}m/s
-							</span>
+							<div class="city-wind__direction">
+								{{ city?.wind?.direction }}
+							</div>
 						</div>
-						<div class="city-wind__direction">{{ city?.wind?.direction }}.</div>
-					</div>
-					<div class="city-pressure">
-						<div class="city-pressure__icon">
-							<svg-pressure />
+						<div class="city-pressure">
+							<div class="city-pressure__icon">
+								<svg-pressure />
+							</div>
+							<div class="city-pressure__text">{{ city?.pressure }}hpa</div>
 						</div>
-						<div class="city-pressure__text">{{ city?.pressure }}hpa</div>
+						<div class="city-humidity">Humidity: {{ city?.humidity }}%</div>
 					</div>
-					<div class="city-humidity">Humidity: {{ city?.humidity }}%</div>
 				</div>
 			</li>
 		</ul>
@@ -204,13 +249,15 @@ onUnmounted(() => {
 
 <style lang="scss" scoped>
 .weather-widget__wrapper {
+	.weather-widget__heading {
+		mix-blend-mode: difference;
+	}
 	width: 290px;
-	min-height: 369px;
+	min-height: 319px;
 	box-sizing: border-box;
 	.weather-widget__empty {
-		height: 100%;
 		background-color: #fff;
-		min-height: 369px;
+		padding: 20px;
 	}
 	.content-item {
 		display: flex;
@@ -224,7 +271,21 @@ onUnmounted(() => {
 		justify-content: flex-start;
 		gap: 5px;
 		position: relative;
+		min-height: 319px;
+		border-radius: 10px;
+		filter: drop-shadow(2px 2px 5px black);
 		.city {
+			&-loader {
+				margin: auto auto;
+			}
+			&-wrapper {
+				display: flex;
+				flex-direction: column;
+				gap: 5px;
+				//transition: 0.3s;
+				opacity: 0;
+				animation: fadeIn 0.5s forwards;
+			}
 			&-title {
 				display: flex;
 				justify-content: space-between;
@@ -251,6 +312,7 @@ onUnmounted(() => {
 					box-sizing: border-box;
 					padding: 20px;
 					overflow-y: auto;
+					border-radius: 10px;
 				}
 			}
 			&-weather {
@@ -258,6 +320,7 @@ onUnmounted(() => {
 				align-items: center;
 				&__icon {
 					filter: drop-shadow(0px 0px 6px #cacaca);
+					max-width: 170px;
 				}
 				&__temperature {
 					font-size: 32px;
@@ -301,6 +364,14 @@ onUnmounted(() => {
 				}
 			}
 		}
+	}
+}
+@keyframes fadeIn {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
 	}
 }
 </style>
